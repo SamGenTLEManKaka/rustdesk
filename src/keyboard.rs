@@ -1,11 +1,12 @@
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::client::get_key_state;
+use crate::common::GrabState;
 #[cfg(feature = "flutter")]
 use crate::flutter::{CUR_SESSION_ID, SESSIONS};
 #[cfg(target_os = "windows")]
-use crate::platform::windows::{get_char_from_vk, get_unicode_from_vk};
+use crate::platform::windows::get_char_by_vk;
 #[cfg(not(any(feature = "flutter", feature = "cli")))]
 use crate::ui::CUR_SESSION;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-use crate::{client::get_key_state, common::GrabState};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 use hbb_common::log;
 use hbb_common::message_proto::*;
@@ -14,11 +15,10 @@ use rdev::KeyCode;
 use rdev::{Event, EventType, Key};
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-use std::time::SystemTime;
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
+    time::SystemTime,
 };
 
 #[cfg(windows)]
@@ -73,7 +73,6 @@ pub mod client {
         super::start_grab_loop();
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub fn change_grab_status(state: GrabState) {
         match state {
             GrabState::Ready => {}
@@ -321,7 +320,6 @@ pub fn is_long_press(event: &Event) -> bool {
     return false;
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn release_remote_keys() {
     // todo!: client quit suddenly, how to release keys?
     let to_release = TO_RELEASE.lock().unwrap().clone();
@@ -341,8 +339,24 @@ pub fn get_keyboard_mode_enum() -> KeyboardMode {
         "translate" => KeyboardMode::Translate,
         "legacy" => KeyboardMode::Legacy,
         _ => {
-            // Set "map" as default mode if version >= 1.2.0.
-            if crate::is_peer_version_ge("1.2.0") {
+            // Set "map" as default mode if version > 1.2.0.
+            let mut is_peer_version_gt_1_2_0 = false;
+
+            #[cfg(not(any(feature = "flutter", feature = "cli")))]
+            if let Some(session) = CUR_SESSION.lock().unwrap().as_ref() {
+                is_peer_version_gt_1_2_0 =
+                    session.get_peer_version() > hbb_common::get_version_number("1.2.0");
+            }
+            #[cfg(feature = "flutter")]
+            if let Some(session) = SESSIONS
+                .read()
+                .unwrap()
+                .get(&*CUR_SESSION_ID.read().unwrap())
+            {
+                is_peer_version_gt_1_2_0 =
+                    session.get_peer_version() > hbb_common::get_version_number("1.2.0");
+            }
+            if is_peer_version_gt_1_2_0 {
                 KeyboardMode::Map
             } else {
                 KeyboardMode::Legacy
@@ -353,87 +367,24 @@ pub fn get_keyboard_mode_enum() -> KeyboardMode {
 
 #[inline]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub fn is_modifier(key: &rdev::Key) -> bool {
-    matches!(
-        key,
-        Key::ShiftLeft
-            | Key::ShiftRight
-            | Key::ControlLeft
-            | Key::ControlRight
-            | Key::MetaLeft
-            | Key::MetaRight
-            | Key::Alt
-            | Key::AltGr
-    )
-}
-
-#[inline]
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub fn is_numpad_rdev_key(key: &rdev::Key) -> bool {
-    matches!(
-        key,
-        Key::Kp0
-            | Key::Kp1
-            | Key::Kp2
-            | Key::Kp3
-            | Key::Kp4
-            | Key::Kp5
-            | Key::Kp6
-            | Key::Kp7
-            | Key::Kp8
-            | Key::Kp9
-            | Key::KpMinus
-            | Key::KpMultiply
-            | Key::KpDivide
-            | Key::KpPlus
-            | Key::KpDecimal
-    )
-}
-
-#[inline]
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub fn is_letter_rdev_key(key: &rdev::Key) -> bool {
-    matches!(
-        key,
-        Key::KeyA
-            | Key::KeyB
-            | Key::KeyC
-            | Key::KeyD
-            | Key::KeyE
-            | Key::KeyF
-            | Key::KeyG
-            | Key::KeyH
-            | Key::KeyI
-            | Key::KeyJ
-            | Key::KeyK
-            | Key::KeyL
-            | Key::KeyM
-            | Key::KeyN
-            | Key::KeyO
-            | Key::KeyP
-            | Key::KeyQ
-            | Key::KeyR
-            | Key::KeyS
-            | Key::KeyT
-            | Key::KeyU
-            | Key::KeyV
-            | Key::KeyW
-            | Key::KeyX
-            | Key::KeyY
-            | Key::KeyZ
-    )
-}
-
-#[inline]
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn is_numpad_key(event: &Event) -> bool {
-    matches!(event.event_type, EventType::KeyPress(key) | EventType::KeyRelease(key) if is_numpad_rdev_key(&key))
+    matches!(event.event_type, EventType::KeyPress(key) | EventType::KeyRelease(key) if match key {
+        Key::Kp0 | Key::Kp1 | Key::Kp2 | Key::Kp3 | Key::Kp4 | Key::Kp5 | Key::Kp6 | Key::Kp7 | Key::Kp8 |
+        Key::Kp9 | Key::KpMinus | Key::KpMultiply | Key::KpDivide | Key::KpPlus | Key::KpDecimal => true,
+        _ => false
+    })
 }
 
 #[inline]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn is_letter_key(event: &Event) -> bool {
-    matches!(event.event_type, EventType::KeyPress(key) | EventType::KeyRelease(key) if is_letter_rdev_key(&key))
+    matches!(event.event_type, EventType::KeyPress(key) | EventType::KeyRelease(key) if match key {
+        Key::KeyA | Key::KeyB | Key::KeyC | Key::KeyD | Key::KeyE | Key::KeyF | Key::KeyG | Key::KeyH |
+        Key::KeyI | Key::KeyJ | Key::KeyK | Key::KeyL | Key::KeyM | Key::KeyN | Key::KeyO | Key::KeyP |
+        Key::KeyQ | Key::KeyR | Key::KeyS | Key::KeyT | Key::KeyU | Key::KeyV | Key::KeyW | Key::KeyX |
+        Key::KeyY | Key::KeyZ => true,
+        _ => false
+    })
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -552,9 +503,8 @@ pub fn event_to_key_events(
     };
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let is_numpad_key = is_numpad_key(&event);
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    if keyboard_mode != KeyboardMode::Translate || is_numpad_key {
+    if keyboard_mode != KeyboardMode::Translate {
+        let is_numpad_key = is_numpad_key(&event);
         let is_letter_key = is_letter_key(&event);
         for key_event in &mut key_events {
             if let Some(lock_modes) = _lock_modes {
@@ -567,7 +517,6 @@ pub fn event_to_key_events(
     key_events
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn event_type_to_event(event_type: EventType) -> Event {
     Event {
         event_type,
@@ -901,7 +850,6 @@ fn try_fill_unicode(_peer: &str, event: &Event, key_event: &KeyEvent, events: &m
                 if name.len() > 0 {
                     let mut evt = key_event.clone();
                     evt.set_seq(name.to_string());
-                    evt.down = true;
                     events.push(evt);
                 }
             }
@@ -911,44 +859,13 @@ fn try_fill_unicode(_peer: &str, event: &Event, key_event: &KeyEvent, events: &m
             #[cfg(target_os = "windows")]
             if _peer == OS_LOWER_LINUX {
                 if is_hot_key_modifiers_down() && unsafe { !IS_0X021D_DOWN } {
-                    if let Some(chr) = get_char_from_vk(event.platform_code as u32) {
+                    if let Some(chr) = get_char_by_vk(event.platform_code as u32) {
                         let mut evt = key_event.clone();
                         evt.set_seq(chr.to_string());
-                        evt.down = true;
                         events.push(evt);
                     }
                 }
             }
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn try_file_win2win_hotkey(
-    peer: &str,
-    event: &Event,
-    key_event: &KeyEvent,
-    events: &mut Vec<KeyEvent>,
-) {
-    if peer == OS_LOWER_WINDOWS && is_hot_key_modifiers_down() && unsafe { !IS_0X021D_DOWN } {
-        let mut down = false;
-        let win2win_hotkey = match event.event_type {
-            EventType::KeyPress(..) => {
-                down = true;
-                if let Some(unicode) = get_unicode_from_vk(event.platform_code as u32) {
-                    Some((unicode as u32 & 0x0000FFFF) | (event.platform_code << 16))
-                } else {
-                    None
-                }
-            }
-            EventType::KeyRelease(..) => Some(event.platform_code << 16),
-            _ => None,
-        };
-        if let Some(code) = win2win_hotkey {
-            let mut evt = key_event.clone();
-            evt.set_win2win_hotkey(code);
-            evt.down = down;
-            events.push(evt);
         }
     }
 }
@@ -965,6 +882,25 @@ fn is_hot_key_modifiers_down() -> bool {
         return true;
     }
     return false;
+}
+
+#[inline]
+#[cfg(target_os = "windows")]
+pub fn translate_key_code(peer: &str, event: &Event, key_event: KeyEvent) -> Option<KeyEvent> {
+    let mut key_event = map_keyboard_mode(peer, event, key_event)?;
+    let chr = if peer == OS_LOWER_WINDOWS {
+        (key_event.chr() & 0x0000FFFF) | ((event.platform_code as u32) << 16)
+    } else {
+        key_event.chr()
+    };
+    key_event.set_chr(chr);
+    Some(key_event)
+}
+
+#[inline]
+#[cfg(not(target_os = "windows"))]
+pub fn translate_key_code(peer: &str, event: &Event, key_event: KeyEvent) -> Option<KeyEvent> {
+    map_keyboard_mode(peer, event, key_event)
 }
 
 #[inline]
@@ -991,10 +927,8 @@ fn is_press(event: &Event) -> bool {
     matches!(event.event_type, EventType::KeyPress(_))
 }
 
-// https://github.com/fufesou/rustdesk/wiki/Keyboard-mode----Translate-Mode
 pub fn translate_keyboard_mode(peer: &str, event: &Event, key_event: KeyEvent) -> Vec<KeyEvent> {
     let mut events: Vec<KeyEvent> = Vec::new();
-
     if let Some(unicode_info) = &event.unicode {
         if unicode_info.is_dead {
             #[cfg(target_os = "macos")]
@@ -1011,7 +945,7 @@ pub fn translate_keyboard_mode(peer: &str, event: &Event, key_event: KeyEvent) -
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if is_numpad_key(&event) {
-        if let Some(evt) = map_keyboard_mode(peer, event, key_event) {
+        if let Some(evt) = translate_key_code(peer, event, key_event) {
             events.push(evt);
         }
         return events;
@@ -1033,15 +967,11 @@ pub fn translate_keyboard_mode(peer: &str, event: &Event, key_event: KeyEvent) -
         return events;
     }
 
-    #[cfg(target_os = "windows")]
-    try_file_win2win_hotkey(peer, event, &key_event, &mut events);
-
     #[cfg(any(target_os = "linux", target_os = "windows"))]
-    if events.is_empty() && is_press(event) {
+    if is_press(event) {
         try_fill_unicode(peer, event, &key_event, &mut events);
     }
 
-    // If AltGr is down, no need to send events other than unicode.
     #[cfg(target_os = "windows")]
     unsafe {
         if IS_0X021D_DOWN {
@@ -1055,19 +985,9 @@ pub fn translate_keyboard_mode(peer: &str, event: &Event, key_event: KeyEvent) -
     }
 
     if events.is_empty() {
-        if let Some(evt) = map_keyboard_mode(peer, event, key_event) {
+        if let Some(evt) = translate_key_code(peer, event, key_event) {
             events.push(evt);
         }
     }
     events
-}
-
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub fn keycode_to_rdev_key(keycode: u32) -> Key {
-    #[cfg(target_os = "windows")]
-    return rdev::win_key_from_scancode(keycode);
-    #[cfg(target_os = "linux")]
-    return rdev::linux_key_from_code(keycode);
-    #[cfg(target_os = "macos")]
-    return rdev::macos_key_from_code(keycode.try_into().unwrap_or_default());
 }

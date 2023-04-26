@@ -24,11 +24,9 @@ use hbb_common::{
     rendezvous_proto::*,
 };
 
-use crate::common::SOFTWARE_UPDATE_URL;
 #[cfg(feature = "flutter")]
 use crate::hbbs_http::account;
-#[cfg(not(any(target_os = "ios")))]
-use crate::ipc;
+use crate::{common::SOFTWARE_UPDATE_URL, ipc};
 
 type Message = RendezvousMessage;
 
@@ -514,10 +512,10 @@ pub fn get_error() -> String {
     #[cfg(target_os = "linux")]
     {
         let dtype = crate::platform::linux::get_display_server();
-        if crate::platform::linux::DISPLAY_SERVER_WAYLAND == dtype {
+        if "wayland" == dtype {
             return crate::server::wayland::common_get_error();
         }
-        if dtype != crate::platform::linux::DISPLAY_SERVER_X11 {
+        if dtype != "x11" {
             return format!(
                 "{} {}, {}",
                 crate::client::translate("Unsupported display server".to_owned()),
@@ -570,7 +568,6 @@ pub fn create_shortcut(_id: String) {
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 #[inline]
 pub fn discover() {
-    #[cfg(not(any(target_os = "ios")))]
     std::thread::spawn(move || {
         allow_err!(crate::lan::discover());
     });
@@ -755,13 +752,6 @@ pub fn has_hwcodec() -> bool {
     return true;
 }
 
-#[cfg(feature = "flutter")]
-#[inline]
-pub fn supported_hwdecodings() -> (bool, bool) {
-    let decoding = scrap::codec::Decoder::supported_decodings(None);
-    (decoding.ability_h264 > 0, decoding.ability_h265 > 0)
-}
-
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[inline]
 pub fn is_root() -> bool {
@@ -850,17 +840,6 @@ pub fn get_user_default_option(key: String) -> String {
     UserDefaultConfig::load().get(&key)
 }
 
-pub fn get_fingerprint() -> String {
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    if Config::get_key_confirmed() {
-        return crate::common::pk_to_fingerprint(Config::get_key_pair().1);
-    } else {
-        return "".to_owned();
-    }
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    return ipc::get_fingerprint();
-}
-
 // notice: avoiding create ipc connection repeatedly,
 // because windows named pipe has serious memory leak issue.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -935,8 +914,7 @@ pub fn option_synced() -> bool {
     OPTION_SYNCED.lock().unwrap().clone()
 }
 
-#[cfg(any(target_os = "android", feature = "flutter"))]
-#[cfg(not(any(target_os = "ios")))]
+#[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 #[tokio::main(flavor = "current_thread")]
 pub(crate) async fn send_to_cm(data: &ipc::Data) {
     if let Ok(mut c) = ipc::connect(1000, "_cm").await {

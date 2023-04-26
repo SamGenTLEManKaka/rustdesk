@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/shared_state.dart';
 import 'package:flutter_hbb/consts.dart';
@@ -159,36 +158,20 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
                   ],
                 );
               } else {
-                bool secure =
-                    connectionType.secure.value == ConnectionType.strSecure;
-                bool direct =
-                    connectionType.direct.value == ConnectionType.strDirect;
-                var msgConn;
-                if (secure && direct) {
-                  msgConn = translate("Direct and encrypted connection");
-                } else if (secure && !direct) {
-                  msgConn = translate("Relayed and encrypted connection");
-                } else if (!secure && direct) {
-                  msgConn = translate("Direct and unencrypted connection");
-                } else {
-                  msgConn = translate("Relayed and unencrypted connection");
-                }
-                var msgFingerprint = '${translate('Fingerprint')}:\n';
-                var fingerprint = FingerprintState.find(key).value;
-                if (fingerprint.length > 5 * 8) {
-                  var first = fingerprint.substring(0, 39);
-                  var second = fingerprint.substring(40);
-                  msgFingerprint += '$first\n$second';
-                } else {
-                  msgFingerprint += fingerprint;
-                }
-
+                final msgDirect = translate(
+                    connectionType.direct.value == ConnectionType.strDirect
+                        ? 'Direct Connection'
+                        : 'Relay Connection');
+                final msgSecure = translate(
+                    connectionType.secure.value == ConnectionType.strSecure
+                        ? 'Secure Connection'
+                        : 'Insecure Connection');
                 final tab = Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     icon,
                     Tooltip(
-                      message: '$msgConn\n$msgFingerprint',
+                      message: '$msgDirect\n$msgSecure',
                       child: SvgPicture.asset(
                         'assets/${connectionType.secure.value}${connectionType.direct.value}.svg',
                         width: themeConf.iconSize,
@@ -301,17 +284,6 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
             dismissFunc: cancelFunc));
       }
     }
-
-    menu.add(MenuEntryButton<String>(
-      childBuilder: (TextStyle? style) => Text(
-        translate('Copy Fingerprint'),
-        style: style,
-      ),
-      proc: () => onCopyFingerprint(FingerprintState.find(key).value),
-      padding: padding,
-      dismissOnClicked: true,
-      dismissCallback: cancelFunc,
-    ));
 
     return mod_menu.PopupMenu<String>(
       items: menu

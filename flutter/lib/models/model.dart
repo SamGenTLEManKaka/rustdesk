@@ -16,9 +16,6 @@ import 'package:flutter_hbb/models/peer_tab_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/models/user_model.dart';
 import 'package:flutter_hbb/models/state_model.dart';
-import 'package:flutter_hbb/plugin/event.dart';
-import 'package:flutter_hbb/plugin/desc.dart';
-import 'package:flutter_hbb/plugin/widget.dart';
 import 'package:flutter_hbb/common/shared_state.dart';
 import 'package:tuple/tuple.dart';
 import 'package:image/image.dart' as img2;
@@ -209,37 +206,26 @@ class FfiModel with ChangeNotifier {
         closeConnection(id: peer_id);
       } else if (name == 'portable_service_running') {
         parent.target?.elevationModel.onPortableServiceRunning(evt);
-      } else if (name == 'on_url_scheme_received') {
+      } else if (name == "on_url_scheme_received") {
         final url = evt['url'].toString();
         parseRustdeskUri(url);
-      } else if (name == 'on_voice_call_waiting') {
+      } else if (name == "on_voice_call_waiting") {
         // Waiting for the response from the peer.
         parent.target?.chatModel.onVoiceCallWaiting();
-      } else if (name == 'on_voice_call_started') {
+      } else if (name == "on_voice_call_started") {
         // Voice call is connected.
         parent.target?.chatModel.onVoiceCallStarted();
-      } else if (name == 'on_voice_call_closed') {
+      } else if (name == "on_voice_call_closed") {
         // Voice call is closed with reason.
         final reason = evt['reason'].toString();
         parent.target?.chatModel.onVoiceCallClosed(reason);
-      } else if (name == 'on_voice_call_incoming') {
+      } else if (name == "on_voice_call_incoming") {
         // Voice call is requested by the peer.
         parent.target?.chatModel.onVoiceCallIncoming();
-      } else if (name == 'update_voice_call_state') {
+      } else if (name == "update_voice_call_state") {
         parent.target?.serverModel.updateVoiceCallState(evt);
-      } else if (name == 'fingerprint') {
-        FingerprintState.find(peerId).value = evt['fingerprint'] ?? '';
-      } else if (name == 'plugin_desc') {
-        updateDesc(evt);
-      } else if (name == 'plugin_event') {
-        handlePluginEvent(
-            evt, peerId, (Map<String, dynamic> e) => handleMsgBox(e, peerId));
-      } else if (name == 'plugin_reload') {
-        handleReloading(evt, peerId);
-      } else if (name == 'plugin_option') {
-        handleOption(evt, peerId);
       } else {
-        debugPrint('Unknown event name: $name');
+        debugPrint("Unknown event name: $name");
       }
     };
   }
@@ -284,7 +270,7 @@ class FfiModel with ChangeNotifier {
       //
     }
     parent.target?.recordingModel.onSwitchDisplay();
-    handleResolutions(peerId, evt['resolutions']);
+    handleResolutions(peerId, evt["resolutions"]);
     notifyListeners();
   }
 
@@ -307,11 +293,11 @@ class FfiModel with ChangeNotifier {
       wrongPasswordDialog(id, dialogManager, type, title, text);
     } else if (type == 'input-password') {
       enterPasswordDialog(id, dialogManager);
-    } else if (type == 'session-login' || type == 'session-re-login') {
-      enterUserLoginDialog(id, dialogManager);
-    } else if (type == 'session-login-password' ||
-        type == 'session-login-password') {
-      enterUserLoginAndPasswordDialog(id, dialogManager);
+    } else if (type == 'xsession-login' || type == 'xsession-re-login') {
+      // to-do
+    } else if (type == 'xsession-login-password' ||
+        type == 'xsession-login-password') {
+      // to-do
     } else if (type == 'restarting') {
       showMsgBox(id, type, title, text, link, false, dialogManager,
           hasCancel: false);
@@ -323,7 +309,7 @@ class FfiModel with ChangeNotifier {
       showWaitUacDialog(id, dialogManager, type);
     } else if (type == 'elevation-error') {
       showElevationError(id, type, title, text, dialogManager);
-    } else if (type == 'relay-hint') {
+    } else if (type == "relay-hint") {
       showRelayHintDialog(id, type, title, text, dialogManager);
     } else {
       var hasRetry = evt['hasRetry'] == 'true';
@@ -1645,14 +1631,8 @@ class FFI {
   }
 
   /// Login with [password], choose if the client should [remember] it.
-  void login(String osUsername, String osPassword, String id, String password,
-      bool remember) {
-    bind.sessionLogin(
-        id: id,
-        osUsername: osUsername,
-        osPassword: osPassword,
-        password: password,
-        remember: remember);
+  void login(String id, String password, bool remember) {
+    bind.sessionLogin(id: id, password: password, remember: remember);
   }
 
   /// Close the remote session.
@@ -1739,7 +1719,6 @@ class PeerInfo {
   Map<String, dynamic> platform_additions = {};
 
   bool get is_wayland => platform_additions['is_wayland'] == true;
-  bool get is_headless => platform_additions['headless'] == true;
 }
 
 const canvasKey = 'canvas';

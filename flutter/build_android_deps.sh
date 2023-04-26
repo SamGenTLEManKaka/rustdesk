@@ -58,12 +58,13 @@ function build {
   fi
   make clean
   ./configure --target=$LIBVPX_TARGET \
-              --enable-pic
+              --enable-pic --disable-vp8 \
               --disable-webm-io \
               --disable-unit-tests \
               --disable-examples \
               --disable-libyuv \
               --disable-postproc \
+              --disable-vp8 \
               --disable-tools \
               --disable-docs \
               --prefix=$PREFIX

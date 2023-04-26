@@ -479,11 +479,12 @@ pub mod client {
             )?);
             shutdown_hooks::add_shutdown_hook(drop_portable_service_shared_memory);
         }
-        if let Some(shmem) = SHMEM.lock().unwrap().as_mut() {
-            unsafe {
-                libc::memset(shmem.as_ptr() as _, 0, shmem.len() as _);
-            }
+        let mut option = SHMEM.lock().unwrap();
+        let shmem = option.as_mut().unwrap();
+        unsafe {
+            libc::memset(shmem.as_ptr() as _, 0, shmem.len() as _);
         }
+        drop(option);
         match para {
             StartPara::Direct => {
                 if let Err(e) = crate::platform::run_background(
@@ -543,11 +544,8 @@ pub mod client {
     }
 
     pub extern "C" fn drop_portable_service_shared_memory() {
-        let mut lock = SHMEM.lock().unwrap();
-        if lock.is_some() {
-            *lock = None;
-            log::info!("drop shared memory");
-        }
+        log::info!("drop shared memory");
+        *SHMEM.lock().unwrap() = None;
     }
 
     pub fn set_quick_support(v: bool) {
@@ -562,18 +560,17 @@ pub mod client {
             Self: Sized,
         {
             let mut option = SHMEM.lock().unwrap();
-            if let Some(shmem) = option.as_mut() {
-                Self::set_para(
-                    shmem,
-                    CapturerPara {
-                        current_display,
-                        use_yuv,
-                        use_yuv_set: false,
-                        timeout_ms: 33,
-                    },
-                );
-                shmem.write(ADDR_CAPTURE_WOULDBLOCK, &utils::i32_to_vec(TRUE));
-            }
+            let shmem = option.as_mut().unwrap();
+            Self::set_para(
+                shmem,
+                CapturerPara {
+                    current_display,
+                    use_yuv,
+                    use_yuv_set: false,
+                    timeout_ms: 33,
+                },
+            );
+            shmem.write(ADDR_CAPTURE_WOULDBLOCK, &utils::i32_to_vec(TRUE));
             CapturerPortable {}
         }
 
@@ -590,29 +587,25 @@ pub mod client {
     impl TraitCapturer for CapturerPortable {
         fn set_use_yuv(&mut self, use_yuv: bool) {
             let mut option = SHMEM.lock().unwrap();
-            if let Some(shmem) = option.as_mut() {
-                unsafe {
-                    let para_ptr = shmem.as_ptr().add(ADDR_CAPTURER_PARA);
-                    let para = para_ptr as *const CapturerPara;
-                    Self::set_para(
-                        shmem,
-                        CapturerPara {
-                            current_display: (*para).current_display,
-                            use_yuv,
-                            use_yuv_set: true,
-                            timeout_ms: (*para).timeout_ms,
-                        },
-                    );
-                }
+            let shmem = option.as_mut().unwrap();
+            unsafe {
+                let para_ptr = shmem.as_ptr().add(ADDR_CAPTURER_PARA);
+                let para = para_ptr as *const CapturerPara;
+                Self::set_para(
+                    shmem,
+                    CapturerPara {
+                        current_display: (*para).current_display,
+                        use_yuv,
+                        use_yuv_set: true,
+                        timeout_ms: (*para).timeout_ms,
+                    },
+                );
             }
         }
 
         fn frame<'a>(&'a mut self, timeout: Duration) -> std::io::Result<Frame<'a>> {
-            let mut lock = SHMEM.lock().unwrap();
-            let shmem = lock.as_mut().ok_or(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "shmem dropped".to_string(),
-            ))?;
+            let mut option = SHMEM.lock().unwrap();
+            let shmem = option.as_mut().unwrap();
             unsafe {
                 let base = shmem.as_ptr();
                 let para_ptr = base.add(ADDR_CAPTURER_PARA);
@@ -808,10 +801,7 @@ pub mod client {
 
     pub fn get_cursor_info(pci: PCURSORINFO) -> BOOL {
         if RUNNING.lock().unwrap().clone() {
-            let mut option = SHMEM.lock().unwrap();
-            option
-                .as_mut()
-                .map_or(FALSE, |sheme| get_cursor_info_(sheme, pci))
+            get_cursor_info_(&mut SHMEM.lock().unwrap().as_mut().unwrap(), pci)
         } else {
             unsafe { winuser::GetCursorInfo(pci) }
         }

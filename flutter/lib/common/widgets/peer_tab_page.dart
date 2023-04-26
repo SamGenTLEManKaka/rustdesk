@@ -261,7 +261,7 @@ class _PeerTabPageState extends State<PeerTabPage>
             },
             child: Icon(
               peerCardUiType.value == PeerUiType.grid
-                  ? Icons.list
+                  ? Icons.list_rounded
                   : Icons.grid_view_rounded,
               size: 18,
               color: textColor,
@@ -455,12 +455,12 @@ class _PeerSortDropdownState extends State<PeerSortDropdown> {
       borderRadius: BorderRadius.circular(5),
     );
 
-    final translated_text = {
-      for (var e in PeerSortType.values) e: translate(e)
-    };
+    final translated_text =
+        PeerSortType.values.map((e) => translate(e)).toList();
 
     final double max_width =
-        50 + translated_text.values.map((e) => e.length).reduce(max) * 10;
+        50 + translated_text.map((e) => e.length).reduce(max) * 10;
+
     return Container(
       padding: EdgeInsets.all(4.0),
       decoration: deco,
@@ -496,20 +496,20 @@ class _PeerSortDropdownState extends State<PeerSortDropdown> {
                 ),
                 enabled: false,
               ),
-              ...translated_text.entries
+              ...translated_text
                   .map<DropdownMenuItem<String>>(
-                    (MapEntry entry) => DropdownMenuItem<String>(
-                      value: entry.key,
+                    (String value) => DropdownMenuItem<String>(
+                      value: value,
                       child: Row(
                         children: [
                           Icon(
-                            entry.key == peerSort.value
+                            value == peerSort.value
                                 ? Icons.radio_button_checked_rounded
                                 : Icons.radio_button_off_rounded,
                             size: 18,
                           ).paddingOnly(right: 12),
                           Text(
-                            entry.value,
+                            value,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ],

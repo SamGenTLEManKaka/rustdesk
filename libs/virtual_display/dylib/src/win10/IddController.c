@@ -196,7 +196,7 @@ BOOL DeviceCreate(PHSWDEVICE hSwDevice)
     }
     if (created == TRUE)
     {
-        SetLastMsg("Device is already created, please destroy it first\n");
+        SetLastMsg("Device is created before, please uninstall it first\n");
         if (g_printMsg)
         {
             printf(g_lastMsg);
@@ -288,7 +288,7 @@ BOOL MonitorPlugIn(UINT index, UINT edid, INT retries)
 
     if (retries < 0)
     {
-        SetLastMsg("Invalid tries %d\n", retries);
+        SetLastMsg("invalid tries %d\n", retries);
         if (g_printMsg)
         {
             printf(g_lastMsg);

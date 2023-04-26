@@ -3,18 +3,17 @@ use crate::{
     flutter_ffi::EventToUI,
     ui_session_interface::{io_loop, InvokeUiSession, Session},
 };
+#[cfg(feature = "flutter_texture_render")]
+use dlopen::{
+    symbor::{Library, Symbol},
+    Error as LibError,
+};
 use flutter_rust_bridge::StreamSink;
+#[cfg(feature = "flutter_texture_render")]
+use hbb_common::libc::c_void;
 use hbb_common::{
     bail, config::LocalConfig, get_version_number, log, message_proto::*,
     rendezvous_proto::ConnType, ResultType,
-};
-#[cfg(feature = "flutter_texture_render")]
-use hbb_common::{
-    dlopen::{
-        symbor::{Library, Symbol},
-        Error as LibError,
-    },
-    libc::c_void,
 };
 use serde_json::json;
 
@@ -29,20 +28,20 @@ use std::{
 
 /// tag "main" for [Desktop Main Page] and [Mobile (Client and Server)] (the mobile don't need multiple windows, only one global event stream is needed)
 /// tag "cm" only for [Desktop CM Page]
-pub(crate) const APP_TYPE_MAIN: &str = "main";
+pub(super) const APP_TYPE_MAIN: &str = "main";
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub(crate) const APP_TYPE_CM: &str = "cm";
+pub(super) const APP_TYPE_CM: &str = "cm";
 #[cfg(any(target_os = "android", target_os = "ios"))]
-pub(crate) const APP_TYPE_CM: &str = "main";
+pub(super) const APP_TYPE_CM: &str = "main";
 
-pub(crate) const APP_TYPE_DESKTOP_REMOTE: &str = "remote";
-pub(crate) const APP_TYPE_DESKTOP_FILE_TRANSFER: &str = "file transfer";
-pub(crate) const APP_TYPE_DESKTOP_PORT_FORWARD: &str = "port forward";
+pub(super) const APP_TYPE_DESKTOP_REMOTE: &str = "remote";
+pub(super) const APP_TYPE_DESKTOP_FILE_TRANSFER: &str = "file transfer";
+pub(super) const APP_TYPE_DESKTOP_PORT_FORWARD: &str = "port forward";
 
 lazy_static::lazy_static! {
-    pub(crate) static ref CUR_SESSION_ID: RwLock<String> = Default::default();
-    pub(crate) static ref SESSIONS: RwLock<HashMap<String, Session<FlutterHandler>>> = Default::default();
-    static ref GLOBAL_EVENT_STREAM: RwLock<HashMap<String, StreamSink<String>>> = Default::default(); // rust to dart event channel
+    pub static ref CUR_SESSION_ID: RwLock<String> = Default::default();
+    pub static ref SESSIONS: RwLock<HashMap<String, Session<FlutterHandler>>> = Default::default();
+    pub static ref GLOBAL_EVENT_STREAM: RwLock<HashMap<String, StreamSink<String>>> = Default::default(); // rust to dart event channel
 }
 
 #[cfg(all(target_os = "windows", feature = "flutter_texture_render"))]
@@ -146,8 +145,6 @@ pub struct FlutterHandler {
     notify_rendered: Arc<RwLock<bool>>,
     renderer: Arc<RwLock<VideoRenderer>>,
     peer_info: Arc<RwLock<PeerInfo>>,
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    hooks: Arc<RwLock<HashMap<String, crate::api::SessionHook>>>,
 }
 
 #[cfg(not(feature = "flutter_texture_render"))]
@@ -159,8 +156,6 @@ pub struct FlutterHandler {
     pub rgba: Arc<RwLock<Vec<u8>>>,
     pub rgba_valid: Arc<AtomicBool>,
     peer_info: Arc<RwLock<PeerInfo>>,
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    hooks: Arc<RwLock<HashMap<String, crate::api::SessionHook>>>,
 }
 
 #[cfg(feature = "flutter_texture_render")]
@@ -223,7 +218,7 @@ impl VideoRenderer {
     }
 
     pub fn on_rgba(&self, rgba: &Vec<u8>) {
-        if self.ptr == usize::default() || self.width == 0 || self.height == 0 {
+        if self.ptr == usize::default() {
             return;
         }
         if let Some(func) = &self.on_rgba_func {
@@ -249,21 +244,17 @@ impl FlutterHandler {
     ///
     /// * `name` - The name of the event.
     /// * `event` - Fields of the event content.
-    pub fn push_event(&self, name: &str, event: Vec<(&str, &str)>) -> Option<bool> {
+    fn push_event(&self, name: &str, event: Vec<(&str, &str)>) {
         let mut h: HashMap<&str, &str> = event.iter().cloned().collect();
         assert!(h.get("name").is_none());
         h.insert("name", name);
         let out = serde_json::ser::to_string(&h).unwrap_or("".to_owned());
-        Some(
-            self.event_stream
-                .read()
-                .unwrap()
-                .as_ref()?
-                .add(EventToUI::Event(out)),
-        )
+        if let Some(stream) = &*self.event_stream.read().unwrap() {
+            stream.add(EventToUI::Event(out));
+        }
     }
 
-    pub(crate) fn close_event_stream(&mut self) {
+    pub fn close_event_stream(&mut self) {
         let mut stream_lock = self.event_stream.write().unwrap();
         if let Some(stream) = &*stream_lock {
             stream.add(EventToUI::Event("close".to_owned()));
@@ -283,28 +274,6 @@ impl FlutterHandler {
             msg_vec.push(h);
         }
         serde_json::ser::to_string(&msg_vec).unwrap_or("".to_owned())
-    }
-
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    pub(crate) fn add_session_hook(&self, key: String, hook: crate::api::SessionHook) -> bool {
-        let mut hooks = self.hooks.write().unwrap();
-        if hooks.contains_key(&key) {
-            // Already has the hook with this key.
-            return false;
-        }
-        let _ = hooks.insert(key, hook);
-        true
-    }
-
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    pub(crate) fn remove_session_hook(&self, key: &String) -> bool {
-        let mut hooks = self.hooks.write().unwrap();
-        if !hooks.contains_key(key) {
-            // The hook with this key does not found.
-            return false;
-        }
-        let _ = hooks.remove(key);
-        true
     }
 
     #[inline]
@@ -393,10 +362,6 @@ impl InvokeUiSession for FlutterHandler {
                 ("direct", &direct.to_string()),
             ],
         );
-    }
-
-    fn set_fingerprint(&self, fingerprint: String) {
-        self.push_event("fingerprint", vec![("fingerprint", &fingerprint)]);
     }
 
     fn job_error(&self, id: i32, err: String, file_num: i32) {
@@ -635,7 +600,7 @@ impl InvokeUiSession for FlutterHandler {
     }
 
     fn on_voice_call_closed(&self, reason: &str) {
-        let _res = self.push_event("on_voice_call_closed", [("reason", reason)].into());
+        self.push_event("on_voice_call_closed", [("reason", reason)].into())
     }
 
     fn on_voice_call_waiting(&self) {
@@ -850,20 +815,8 @@ pub mod connection_manager {
         }
     }
 
-    #[inline]
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    pub fn start_cm_no_ui() {
-        start_listen_ipc(false);
-    }
-
-    #[inline]
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub fn start_listen_ipc_thread() {
-        start_listen_ipc(true);
-    }
-
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    fn start_listen_ipc(new_thread: bool) {
         use crate::ui_cm_interface::{start_ipc, ConnectionManager};
 
         #[cfg(target_os = "linux")]
@@ -872,11 +825,7 @@ pub mod connection_manager {
         let cm = ConnectionManager {
             ui_handler: FlutterHandler {},
         };
-        if new_thread {
-            std::thread::spawn(move || start_ipc(cm));
-        } else {
-            start_ipc(cm);
-        }
+        std::thread::spawn(move || start_ipc(cm));
     }
 
     #[cfg(target_os = "android")]
@@ -1001,7 +950,6 @@ pub fn session_next_rgba(id: *const char) {
     }
 }
 
-#[inline]
 #[no_mangle]
 #[cfg(feature = "flutter_texture_render")]
 pub fn session_register_texture(id: *const char, ptr: usize) {
@@ -1013,39 +961,6 @@ pub fn session_register_texture(id: *const char, ptr: usize) {
     }
 }
 
-#[inline]
 #[no_mangle]
 #[cfg(not(feature = "flutter_texture_render"))]
 pub fn session_register_texture(_id: *const char, _ptr: usize) {}
-
-#[inline]
-pub fn push_session_event(peer: &str, name: &str, event: Vec<(&str, &str)>) -> Option<bool> {
-    SESSIONS.read().unwrap().get(peer)?.push_event(name, event)
-}
-
-#[inline]
-pub fn push_global_event(channel: &str, event: String) -> Option<bool> {
-    Some(GLOBAL_EVENT_STREAM.read().unwrap().get(channel)?.add(event))
-}
-
-pub fn start_global_event_stream(s: StreamSink<String>, app_type: String) -> ResultType<()> {
-    if let Some(_) = GLOBAL_EVENT_STREAM
-        .write()
-        .unwrap()
-        .insert(app_type.clone(), s)
-    {
-        log::warn!(
-            "Global event stream of type {} is started before, but now removed",
-            app_type
-        );
-    }
-    Ok(())
-}
-
-pub fn stop_global_event_stream(app_type: String) {
-    let _ = GLOBAL_EVENT_STREAM.write().unwrap().remove(&app_type);
-}
-
-#[no_mangle]
-unsafe extern "C" fn get_rgba() {
-}

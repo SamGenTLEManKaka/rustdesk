@@ -48,5 +48,3 @@ lib/generated_bridge.dart
 .vscode-server/
 .ssh
 .devcontainer/.*
-# build cache in examples
-examples/**/target/

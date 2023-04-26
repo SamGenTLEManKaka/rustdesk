@@ -10,16 +10,11 @@ import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/server_model.dart';
-import 'package:flutter_hbb/plugin/desc.dart';
-import 'package:flutter_hbb/plugin/model.dart';
-import 'package:flutter_hbb/plugin/common.dart';
-import 'package:flutter_hbb/plugin/widget.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:flutter_hbb/desktop/widgets/scroll_wrapper.dart';
-import 'package:window_manager/window_manager.dart';
 
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/login.dart';
@@ -76,6 +71,16 @@ class DesktopSettingPage extends StatefulWidget {
 
 class _DesktopSettingPageState extends State<DesktopSettingPage>
     with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  final List<_TabInfo> settingTabs = <_TabInfo>[
+    _TabInfo('General', Icons.settings_outlined, Icons.settings),
+    _TabInfo('Security', Icons.enhanced_encryption_outlined,
+        Icons.enhanced_encryption),
+    _TabInfo('Network', Icons.link_outlined, Icons.link),
+    _TabInfo('Display', Icons.desktop_windows_outlined, Icons.desktop_windows),
+    _TabInfo('Account', Icons.person_outline, Icons.person),
+    _TabInfo('About', Icons.info_outline, Icons.info)
+  ];
+
   late PageController controller;
   late RxInt selectedIndex;
 
@@ -99,39 +104,6 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
     Get.delete<RxInt>(tag: _kSettingPageIndexTag);
   }
 
-  List<_TabInfo> _settingTabs() {
-    final List<_TabInfo> settingTabs = <_TabInfo>[
-      _TabInfo('General', Icons.settings_outlined, Icons.settings),
-      _TabInfo('Security', Icons.enhanced_encryption_outlined,
-          Icons.enhanced_encryption),
-      _TabInfo('Network', Icons.link_outlined, Icons.link),
-      _TabInfo(
-          'Display', Icons.desktop_windows_outlined, Icons.desktop_windows),
-      _TabInfo('Account', Icons.person_outline, Icons.person),
-      _TabInfo('About', Icons.info_outline, Icons.info)
-    ];
-    if (bind.pluginFeatureIsEnabled()) {
-      settingTabs.insert(
-          4, _TabInfo('Plugin', Icons.extension_outlined, Icons.extension));
-    }
-    return settingTabs;
-  }
-
-  List<Widget> _children() {
-    final children = [
-      _General(),
-      _Safety(),
-      _Network(),
-      _Display(),
-      _Account(),
-      _About(),
-    ];
-    if (bind.pluginFeatureIsEnabled()) {
-      children.insert(4, _Plugin());
-    }
-    return children;
-  }
-
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -144,7 +116,7 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
             child: Column(
               children: [
                 _header(),
-                Flexible(child: _listView(tabs: _settingTabs())),
+                Flexible(child: _listView(tabs: settingTabs)),
               ],
             ),
           ),
@@ -157,7 +129,14 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
                   child: PageView(
                     controller: controller,
                     physics: DraggableNeverScrollableScrollPhysics(),
-                    children: _children(),
+                    children: const [
+                      _General(),
+                      _Safety(),
+                      _Network(),
+                      _Display(),
+                      _Account(),
+                      _About(),
+                    ],
                   )),
             ),
           )
@@ -322,7 +301,7 @@ class _GeneralState extends State<_General> {
 
   Widget audio(BuildContext context) {
     String getDefault() {
-      if (Platform.isWindows) return translate('System Sound');
+      if (Platform.isWindows) return 'System Sound';
       return '';
     }
 
@@ -343,7 +322,7 @@ class _GeneralState extends State<_General> {
     return futureBuilder(future: () async {
       List<String> devices = (await bind.mainGetSoundInputs()).toList();
       if (Platform.isWindows) {
-        devices.insert(0, translate('System Sound'));
+        devices.insert(0, 'System Sound');
       }
       String current = await getValue();
       return {'devices': devices, 'current': current};
@@ -436,7 +415,7 @@ class _GeneralState extends State<_General> {
       List<String> keys = langsMap.keys.toList();
       List<String> values = langsMap.values.toList();
       keys.insert(0, '');
-      values.insert(0, translate('Default'));
+      values.insert(0, 'Default');
       String currentKey = data['lang']!;
       if (!keys.contains(currentKey)) {
         currentKey = '';
@@ -1249,9 +1228,9 @@ class _DisplayState extends State<_Display> {
                   children: [
                     Slider(
                       value: fpsValue.value,
-                      min: 5.0,
+                      min: 10.0,
                       max: 120.0,
-                      divisions: 23,
+                      divisions: 22,
                       onChanged: (double value) async {
                         fpsValue.value = value;
                         await bind.mainSetUserDefaultOption(
@@ -1279,6 +1258,9 @@ class _DisplayState extends State<_Display> {
   }
 
   Widget codec(BuildContext context) {
+    if (!bind.mainHasHwcodec()) {
+      return Offstage();
+    }
     final key = 'codec-preference';
     onChanged(String value) async {
       await bind.mainSetUserDefaultOption(key: key, value: value);
@@ -1286,28 +1268,7 @@ class _DisplayState extends State<_Display> {
     }
 
     final groupValue = bind.mainGetUserDefaultOption(key: key);
-    var hwRadios = [];
-    try {
-      final Map codecsJson = jsonDecode(bind.mainSupportedHwdecodings());
-      final h264 = codecsJson['h264'] ?? false;
-      final h265 = codecsJson['h265'] ?? false;
-      if (h264) {
-        hwRadios.add(_Radio(context,
-            value: 'h264',
-            groupValue: groupValue,
-            label: 'H264',
-            onChanged: onChanged));
-      }
-      if (h265) {
-        hwRadios.add(_Radio(context,
-            value: 'h265',
-            groupValue: groupValue,
-            label: 'H265',
-            onChanged: onChanged));
-      }
-    } catch (e) {
-      debugPrint("failed to parse supported hwdecodings, err=$e");
-    }
+
     return _Card(title: 'Default Codec', children: [
       _Radio(context,
           value: 'auto',
@@ -1315,16 +1276,20 @@ class _DisplayState extends State<_Display> {
           label: 'Auto',
           onChanged: onChanged),
       _Radio(context,
-          value: 'vp8',
-          groupValue: groupValue,
-          label: 'VP8',
-          onChanged: onChanged),
-      _Radio(context,
           value: 'vp9',
           groupValue: groupValue,
           label: 'VP9',
           onChanged: onChanged),
-      ...hwRadios,
+      _Radio(context,
+          value: 'h264',
+          groupValue: groupValue,
+          label: 'H264',
+          onChanged: onChanged),
+      _Radio(context,
+          value: 'h265',
+          groupValue: groupValue,
+          label: 'H265',
+          onChanged: onChanged),
     ]);
   }
 
@@ -1397,168 +1362,6 @@ class _AccountState extends State<_Account> {
   }
 }
 
-class _Checkbox extends StatefulWidget {
-  final String label;
-  final bool Function() getValue;
-  final Future<void> Function(bool) setValue;
-
-  const _Checkbox(
-      {Key? key,
-      required this.label,
-      required this.getValue,
-      required this.setValue})
-      : super(key: key);
-
-  @override
-  State<_Checkbox> createState() => _CheckboxState();
-}
-
-class _CheckboxState extends State<_Checkbox> {
-  var value = false;
-
-  @override
-  initState() {
-    super.initState();
-    value = widget.getValue();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    onChanged(bool b) async {
-      await widget.setValue(b);
-      setState(() {
-        value = widget.getValue();
-      });
-    }
-
-    return GestureDetector(
-      child: Row(
-        children: [
-          Checkbox(
-            value: value,
-            onChanged: (_) => onChanged(!value),
-          ).marginOnly(right: 5),
-          Expanded(
-            child: Text(translate(widget.label)),
-          )
-        ],
-      ).marginOnly(left: _kCheckBoxLeftMargin),
-      onTap: () => onChanged(!value),
-    );
-  }
-}
-
-class PluginCard extends StatefulWidget {
-  final PluginId pluginId;
-  final Desc desc;
-  const PluginCard({
-    Key? key,
-    required this.pluginId,
-    required this.desc,
-  }) : super(key: key);
-
-  @override
-  State<PluginCard> createState() => PluginCardState();
-}
-
-class PluginCardState extends State<PluginCard> {
-  @override
-  Widget build(BuildContext context) {
-    final children = [
-      _Button(
-        'Reload',
-        () async {
-          clearPlugin(widget.pluginId);
-          await bind.pluginReload(id: widget.pluginId);
-          setState(() {});
-        },
-      ),
-      _Checkbox(
-        label: 'Enable',
-        getValue: () => bind.pluginIdIsEnabled(id: widget.pluginId),
-        setValue: (bool v) async {
-          if (!v) {
-            clearPlugin(widget.pluginId);
-          }
-          await bind.pluginIdEnable(id: widget.pluginId, v: v);
-          setState(() {});
-        },
-      ),
-    ];
-    final model = getPluginModel(kLocationHostMainPlugin, widget.pluginId);
-    if (model != null) {
-      children.add(PluginItem(
-        pluginId: widget.pluginId,
-        peerId: '',
-        location: kLocationHostMainPlugin,
-        pluginModel: model,
-        isMenu: false,
-      ));
-    }
-    return _Card(title: widget.desc.name, children: children);
-  }
-}
-
-class _Plugin extends StatefulWidget {
-  const _Plugin({Key? key}) : super(key: key);
-
-  @override
-  State<_Plugin> createState() => _PluginState();
-}
-
-class _PluginState extends State<_Plugin> {
-  // temp checkbox widget
-
-  List<Widget> _buildCards(DescModel model) => [
-        _Card(
-          title: 'Plugin',
-          children: [
-            _Checkbox(
-              label: 'Enable',
-              getValue: () => bind.pluginIsEnabled() ?? false,
-              setValue: (bool v) async {
-                if (!v) {
-                  clearLocations();
-                }
-                await bind.pluginEnable(v: v);
-              },
-            ),
-          ],
-        ),
-        ...model.all.entries
-            .map((entry) => PluginCard(pluginId: entry.key, desc: entry.value))
-            .toList(),
-      ];
-
-  @override
-  Widget build(BuildContext context) {
-    final scrollController = ScrollController();
-    return DesktopScrollWrapper(
-      scrollController: scrollController,
-      child: ChangeNotifierProvider.value(
-        value: DescModel.instance,
-        child: Consumer<DescModel>(builder: (context, model, child) {
-          return ListView(
-            physics: DraggableNeverScrollableScrollPhysics(),
-            controller: scrollController,
-            children: _buildCards(model),
-          ).marginOnly(bottom: _kListViewBottomMargin);
-        }),
-      ),
-    );
-  }
-
-  Widget accountAction() {
-    return Obx(() => _Button(
-        gFFI.userModel.userName.value.isEmpty ? 'Login' : 'Logout',
-        () => {
-              gFFI.userModel.userName.value.isEmpty
-                  ? loginDialog()
-                  : gFFI.userModel.logOut()
-            }));
-  }
-}
-
 class _About extends StatefulWidget {
   const _About({Key? key}) : super(key: key);
 
@@ -1573,18 +1376,11 @@ class _AboutState extends State<_About> {
       final license = await bind.mainGetLicense();
       final version = await bind.mainGetVersion();
       final buildDate = await bind.mainGetBuildDate();
-      final fingerprint = await bind.mainGetFingerprint();
-      return {
-        'license': license,
-        'version': version,
-        'buildDate': buildDate,
-        'fingerprint': fingerprint
-      };
+      return {'license': license, 'version': version, 'buildDate': buildDate};
     }(), hasData: (data) {
       final license = data['license'].toString();
       final version = data['version'].toString();
       final buildDate = data['buildDate'].toString();
-      final fingerprint = data['fingerprint'].toString();
       const linkStyle = TextStyle(decoration: TextDecoration.underline);
       final scrollController = ScrollController();
       return DesktopScrollWrapper(
@@ -1604,9 +1400,6 @@ class _AboutState extends State<_About> {
                           .marginSymmetric(vertical: 4.0)),
                   SelectionArea(
                       child: Text('${translate('Build Date')}: $buildDate')
-                          .marginSymmetric(vertical: 4.0)),
-                  SelectionArea(
-                      child: Text('${translate('Fingerprint')}: $fingerprint')
                           .marginSymmetric(vertical: 4.0)),
                   InkWell(
                       onTap: () {
@@ -1875,9 +1668,6 @@ Widget _lock(
                     bool checked = await bind.mainCheckSuperUserPermission();
                     if (checked) {
                       onUnlock();
-                    }
-                    if (Platform.isMacOS) {
-                      await windowManager.show();
                     }
                   },
                 ).marginSymmetric(horizontal: 2, vertical: 4),

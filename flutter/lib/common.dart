@@ -43,7 +43,6 @@ final isIOS = Platform.isIOS;
 final isDesktop = Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 var isWeb = false;
 var isWebDesktop = false;
-var isMobile = isAndroid || isIOS;
 var version = "";
 int androidVersion = 0;
 
@@ -797,7 +796,6 @@ void showToast(String text, {Duration timeout = const Duration(seconds: 2)}) {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
               child: Text(
                 text,
-                textAlign: TextAlign.center,
                 style: const TextStyle(
                     decoration: TextDecoration.none,
                     fontWeight: FontWeight.w300,
@@ -1160,17 +1158,38 @@ class AndroidPermissionManager {
 // Used only for mobile, pages remote, settings, dialog
 // TODO remove argument contentPadding, it’s not used, getToggle() has not
 RadioListTile<T> getRadio<T>(
-    Widget title, T toValue, T curValue, ValueChanged<T?>? onChange,
+    String name, T toValue, T curValue, void Function(T?) onChange,
     {EdgeInsetsGeometry? contentPadding}) {
   return RadioListTile<T>(
     contentPadding: contentPadding ?? EdgeInsets.zero,
     visualDensity: VisualDensity.compact,
     controlAffinity: ListTileControlAffinity.trailing,
-    title: title,
+    title: Text(translate(name)),
     value: toValue,
     groupValue: curValue,
     onChanged: onChange,
   );
+}
+
+// TODO move this to mobile/widgets.
+// Used only for mobile, pages remote, settings, dialog
+CheckboxListTile getToggle(
+    String id, void Function(void Function()) setState, option, name,
+    {FFI? ffi}) {
+  final opt = bind.sessionGetToggleOptionSync(id: id, arg: option);
+  return CheckboxListTile(
+      contentPadding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      value: opt,
+      onChanged: (v) {
+        setState(() {
+          bind.sessionToggleOption(id: id, value: option);
+        });
+        if (option == "show-quality-monitor") {
+          (ffi ?? gFFI).qualityMonitorModel.checkShowQualityMonitor(id);
+        }
+      },
+      title: Text(translate(name)));
 }
 
 /// find ffi, tag is Remote ID
@@ -1600,10 +1619,8 @@ bool callUniLinksUriHandler(Uri uri) {
     final peerId = uri.path.substring("/new/".length);
     var param = uri.queryParameters;
     String? switch_uuid = param["switch_uuid"];
-    String? password = param["password"];
     Future.delayed(Duration.zero, () {
-      rustDeskWinManager.newRemoteDesktop(peerId,
-          password: password, switch_uuid: switch_uuid);
+      rustDeskWinManager.newRemoteDesktop(peerId, switch_uuid: switch_uuid);
     });
     return true;
   }
@@ -2034,13 +2051,4 @@ Widget futureBuilder(
           return Container();
         }
       });
-}
-
-void onCopyFingerprint(String value) {
-  if (value.isNotEmpty) {
-    Clipboard.setData(ClipboardData(text: value));
-    showToast('$value\n${translate("Copied")}');
-  } else {
-    showToast(translate("no fingerprints"));
-  }
 }

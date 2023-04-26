@@ -1,6 +1,4 @@
 use super::*;
-#[cfg(target_os = "macos")]
-use crate::common::is_server;
 #[cfg(target_os = "linux")]
 use crate::common::IS_X11;
 #[cfg(target_os = "macos")]
@@ -10,12 +8,13 @@ use hbb_common::{config::COMPRESS_LEVEL, get_time, protobuf::EnumOrUnknown};
 use rdev::{self, EventType, Key as RdevKey, KeyCode, RawKey};
 #[cfg(target_os = "macos")]
 use rdev::{CGEventSourceStateID, CGEventTapLocation, VirtualInput};
+use std::time::Duration;
 use std::{
     convert::TryFrom,
     ops::Sub,
     sync::atomic::{AtomicBool, Ordering},
     thread,
-    time::{self, Duration, Instant},
+    time::{self, Instant},
 };
 
 const INVALID_CURSOR_POS: i32 = i32::MIN;
@@ -114,7 +113,7 @@ impl Subscriber for MouseCursorSub {
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(not(target_os = "macos"))]
 struct LockModesHandler {
     caps_lock_changed: bool,
     num_lock_changed: bool,
@@ -129,21 +128,8 @@ impl LockModesHandler {
         key_event.modifiers.contains(&modifier.into())
     }
 
-    #[inline]
-    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-    fn new_handler(key_event: &KeyEvent, _is_numpad_key: bool) -> Self {
-        #[cfg(any(target_os = "windows", target_os = "linux"))]
-        {
-            Self::new(key_event, _is_numpad_key)
-        }
-        #[cfg(target_os = "macos")]
-        {
-            Self::new(key_event)
-        }
-    }
-
-    #[cfg(any(target_os = "windows", target_os = "linux"))]
-    fn new(key_event: &KeyEvent, is_numpad_key: bool) -> Self {
+    #[cfg(not(target_os = "macos"))]
+    fn new(key_event: &KeyEvent) -> Self {
         let mut en = ENIGO.lock().unwrap();
         let event_caps_enabled = Self::is_modifier_enabled(key_event, ControlKey::CapsLock);
         let local_caps_enabled = en.get_key_state(enigo::Key::CapsLock);
@@ -152,18 +138,13 @@ impl LockModesHandler {
             en.key_click(enigo::Key::CapsLock);
         }
 
-        let mut num_lock_changed = false;
-        if is_numpad_key {
-            let local_num_enabled = en.get_key_state(enigo::Key::NumLock);
-            let event_num_enabled = Self::is_modifier_enabled(key_event, ControlKey::NumLock);
-            num_lock_changed = event_num_enabled != local_num_enabled;
-        } else if is_legacy_mode(key_event) {
-            #[cfg(target_os = "windows")]
-            {
-                num_lock_changed =
-                    should_disable_numlock(key_event) && en.get_key_state(enigo::Key::NumLock);
-            }
-        }
+        let event_num_enabled = Self::is_modifier_enabled(key_event, ControlKey::NumLock);
+        let local_num_enabled = en.get_key_state(enigo::Key::NumLock);
+        #[cfg(not(target_os = "windows"))]
+        let disable_numlock = false;
+        #[cfg(target_os = "windows")]
+        let disable_numlock = is_numlock_disabled(key_event);
+        let num_lock_changed = event_num_enabled != local_num_enabled && !disable_numlock;
         if num_lock_changed {
             en.key_click(enigo::Key::NumLock);
         }
@@ -200,7 +181,7 @@ impl LockModesHandler {
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(not(target_os = "macos"))]
 impl Drop for LockModesHandler {
     fn drop(&mut self) {
         let mut en = ENIGO.lock().unwrap();
@@ -211,20 +192,6 @@ impl Drop for LockModesHandler {
             en.key_click(enigo::Key::NumLock);
         }
     }
-}
-
-#[inline]
-#[cfg(target_os = "windows")]
-fn should_disable_numlock(evt: &KeyEvent) -> bool {
-    // disable numlock if press home etc when numlock is on,
-    // because we will get numpad value (7,8,9 etc) if not
-    match (&evt.union, evt.mode.enum_value_or(KeyboardMode::Legacy)) {
-        (Some(key_event::Union::ControlKey(ck)), KeyboardMode::Legacy) => {
-            return NUMPAD_KEY_MAP.contains_key(&ck.value());
-        }
-        _ => {}
-    }
-    false
 }
 
 pub const NAME_CURSOR: &'static str = "mouse_cursor";
@@ -379,6 +346,7 @@ pub fn try_stop_record_cursor_pos() {
 #[cfg(target_os = "macos")]
 lazy_static::lazy_static! {
     static ref QUEUE: Queue = Queue::main();
+    static ref IS_SERVER: bool =  std::env::args().nth(1) == Some("--server".to_owned());
 }
 
 #[cfg(target_os = "macos")]
@@ -521,7 +489,7 @@ pub fn handle_mouse(evt: &MouseEvent, conn: i32) {
         };
     }
     #[cfg(target_os = "macos")]
-    if !is_server() {
+    if !*IS_SERVER {
         // having GUI, run main GUI thread, otherwise crash
         let evt = evt.clone();
         QUEUE.exec_async(move || handle_mouse_(&evt));
@@ -583,7 +551,7 @@ fn record_key_to_key(record_key: u64) -> Option<Key> {
     }
 }
 
-pub fn release_device_modifiers() {
+pub fn release_modifiers() {
     let mut en = ENIGO.lock().unwrap();
     for modifier in [
         Key::Shift,
@@ -903,7 +871,7 @@ pub async fn lock_screen() {
 
 pub fn handle_key(evt: &KeyEvent) {
     #[cfg(target_os = "macos")]
-    if !is_server() {
+    if !*IS_SERVER {
         // having GUI, run main GUI thread, otherwise crash
         let evt = evt.clone();
         QUEUE.exec_async(move || handle_key_(&evt));
@@ -929,7 +897,7 @@ fn reset_input() {
 
 #[cfg(target_os = "macos")]
 pub fn reset_input_ondisconn() {
-    if !is_server() {
+    if !*IS_SERVER {
         QUEUE.exec_async(reset_input);
     } else {
         reset_input();
@@ -1030,6 +998,45 @@ fn control_key_value_to_key(value: i32) -> Option<Key> {
 #[inline]
 fn char_value_to_key(value: u32) -> Key {
     Key::Layout(std::char::from_u32(value).unwrap_or('\0'))
+}
+
+#[cfg(target_os = "windows")]
+fn has_numpad_key(key_event: &KeyEvent) -> bool {
+    key_event
+        .modifiers
+        .iter()
+        .filter(|&&ck| NUMPAD_KEY_MAP.get(&ck.value()).is_some())
+        .count()
+        != 0
+}
+
+#[cfg(target_os = "windows")]
+fn is_rdev_numpad_key(key_event: &KeyEvent) -> bool {
+    let code = key_event.chr();
+    let key = rdev::get_win_key(code, 0);
+    match key {
+        RdevKey::Home
+        | RdevKey::UpArrow
+        | RdevKey::PageUp
+        | RdevKey::LeftArrow
+        | RdevKey::RightArrow
+        | RdevKey::End
+        | RdevKey::DownArrow
+        | RdevKey::PageDown
+        | RdevKey::Insert
+        | RdevKey::Delete => true,
+        _ => false,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn is_numlock_disabled(key_event: &KeyEvent) -> bool {
+    // disable numlock if press home etc when numlock is on,
+    // because we will get numpad value (7,8,9 etc) if not
+    match key_event.mode.unwrap() {
+        KeyboardMode::Map => is_rdev_numpad_key(key_event),
+        _ => has_numpad_key(key_event),
+    }
 }
 
 fn map_keyboard_mode(evt: &KeyEvent) {
@@ -1257,10 +1264,8 @@ fn translate_keyboard_mode(evt: &KeyEvent) {
                     simulate_(&EventType::KeyRelease(RdevKey::ShiftRight));
                 }
                 for chr in seq.chars() {
-                    // char in rust is 4 bytes.
-                    // But for this case, char comes from keyboard. We only need 2 bytes.
                     #[cfg(target_os = "windows")]
-                    rdev::simulate_unicode(chr as _).ok();
+                    rdev::simulate_char(chr).ok();
                     #[cfg(target_os = "linux")]
                     en.key_click(Key::Layout(chr));
                 }
@@ -1275,101 +1280,10 @@ fn translate_keyboard_mode(evt: &KeyEvent) {
         Some(key_event::Union::Unicode(..)) => {
             // Do not handle unicode for now.
         }
-        #[cfg(target_os = "windows")]
-        Some(key_event::Union::Win2winHotkey(code)) => {
-            simulate_win2win_hotkey(*code, evt.down);
-        }
         _ => {
             log::debug!("Unreachable. Unexpected key event {:?}", &evt);
         }
     }
-}
-
-#[cfg(target_os = "windows")]
-fn simulate_win2win_hotkey(code: u32, down: bool) {
-    let unicode: u16 = (code & 0x0000FFFF) as u16;
-    if down {
-        if rdev::simulate_key_unicode(unicode, false).is_ok() {
-            return;
-        }
-    }
-
-    let keycode: u16 = ((code >> 16) & 0x0000FFFF) as u16;
-    let scan = rdev::vk_to_scancode(keycode as _);
-    allow_err!(rdev::simulate_code(None, Some(scan), down));
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
-fn skip_led_sync_control_key(_key: &ControlKey) -> bool {
-    false
-}
-
-// LockModesHandler should not be created when single meta is pressing and releasing.
-// Because the drop function may insert "CapsLock Click" and "NumLock Click", which breaks single meta click.
-// https://github.com/rustdesk/rustdesk/issues/3928#issuecomment-1496936687
-// https://github.com/rustdesk/rustdesk/issues/3928#issuecomment-1500415822
-// https://github.com/rustdesk/rustdesk/issues/3928#issuecomment-1500773473
-#[cfg(any(target_os = "windows", target_os = "linux"))]
-fn skip_led_sync_control_key(key: &ControlKey) -> bool {
-    matches!(
-        key,
-        ControlKey::Control
-            | ControlKey::RControl
-            | ControlKey::Meta
-            | ControlKey::Shift
-            | ControlKey::RShift
-            | ControlKey::Alt
-            | ControlKey::RAlt
-            | ControlKey::Tab
-            | ControlKey::Return
-    )
-}
-
-#[inline]
-#[cfg(any(target_os = "windows", target_os = "linux"))]
-fn is_numpad_control_key(key: &ControlKey) -> bool {
-    matches!(
-        key,
-        ControlKey::Numpad0
-            | ControlKey::Numpad1
-            | ControlKey::Numpad2
-            | ControlKey::Numpad3
-            | ControlKey::Numpad4
-            | ControlKey::Numpad5
-            | ControlKey::Numpad6
-            | ControlKey::Numpad7
-            | ControlKey::Numpad8
-            | ControlKey::Numpad9
-            | ControlKey::NumpadEnter
-    )
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
-fn skip_led_sync_rdev_key(_key: &RdevKey) -> bool {
-    false
-}
-
-#[cfg(any(target_os = "windows", target_os = "linux"))]
-fn skip_led_sync_rdev_key(key: &RdevKey) -> bool {
-    matches!(
-        key,
-        RdevKey::ControlLeft
-            | RdevKey::ControlRight
-            | RdevKey::MetaLeft
-            | RdevKey::MetaRight
-            | RdevKey::ShiftLeft
-            | RdevKey::ShiftRight
-            | RdevKey::Alt
-            | RdevKey::AltGr
-            | RdevKey::Tab
-            | RdevKey::Return
-    )
-}
-
-#[inline]
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn is_legacy_mode(evt: &KeyEvent) -> bool {
-    evt.mode.enum_value_or(KeyboardMode::Legacy) == KeyboardMode::Legacy
 }
 
 pub fn handle_key_(evt: &KeyEvent) {
@@ -1377,38 +1291,17 @@ pub fn handle_key_(evt: &KeyEvent) {
         return;
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let mut _lock_mode_handler = None;
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    match &evt.union {
+    let _lock_mode_handler = match &evt.union {
         Some(key_event::Union::Unicode(..)) | Some(key_event::Union::Seq(..)) => {
-            _lock_mode_handler = Some(LockModesHandler::new_handler(&evt, false));
+            Some(LockModesHandler::new(&evt))
         }
-        Some(key_event::Union::ControlKey(ck)) => {
-            let key = ck.enum_value_or(ControlKey::Unknown);
-            if !skip_led_sync_control_key(&key) {
-                #[cfg(target_os = "macos")]
-                let is_numpad_key = false;
-                #[cfg(any(target_os = "windows", target_os = "linux"))]
-                let is_numpad_key = is_numpad_control_key(&key);
-                _lock_mode_handler = Some(LockModesHandler::new_handler(&evt, is_numpad_key));
-            }
-        }
-        Some(key_event::Union::Chr(code)) => {
-            if is_legacy_mode(&evt) {
-                _lock_mode_handler = Some(LockModesHandler::new_handler(evt, false));
+        _ => {
+            if evt.down {
+                Some(LockModesHandler::new(&evt))
             } else {
-                let key = crate::keyboard::keycode_to_rdev_key(*code);
-                if !skip_led_sync_rdev_key(&key) {
-                    #[cfg(target_os = "macos")]
-                    let is_numpad_key = false;
-                    #[cfg(any(target_os = "windows", target_os = "linux"))]
-                    let is_numpad_key = crate::keyboard::is_numpad_rdev_key(&key);
-                    _lock_mode_handler = Some(LockModesHandler::new_handler(evt, is_numpad_key));
-                }
+                None
             }
         }
-        _ => {}
     };
 
     match evt.mode.unwrap() {

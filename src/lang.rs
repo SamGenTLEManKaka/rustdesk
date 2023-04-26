@@ -5,12 +5,12 @@ mod cn;
 mod cs;
 mod da;
 mod de;
-mod el;
 mod en;
 mod eo;
 mod es;
 mod fa;
 mod fr;
+mod el;
 mod hu;
 mod id;
 mod it;
@@ -32,7 +32,6 @@ mod tr;
 mod tw;
 mod ua;
 mod vn;
-mod lt;
 
 pub const LANGS: &[(&str, &str)] = &[
     ("en", "English"),
@@ -67,7 +66,6 @@ pub const LANGS: &[(&str, &str)] = &[
     ("th", "ภาษาไทย"),
     ("sl", "Slovenščina"),
     ("ro", "Română"),
-    ("lt", "Lietuvių"),
 ];
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -131,7 +129,6 @@ pub fn translate_locale(name: String, locale: &str) -> String {
         "th" => th::T.deref(),
         "sl" => sl::T.deref(),
         "ro" => ro::T.deref(),
-        "lt" => lt::T.deref(),
         _ => en::T.deref(),
     };
     if let Some(v) = m.get(&name as &str) {

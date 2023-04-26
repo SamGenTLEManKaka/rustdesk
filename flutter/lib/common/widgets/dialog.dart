@@ -1,9 +1,7 @@
 import 'dart:async';
 
-import 'package:debounce_throttle/debounce_throttle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_hbb/common/shared_state.dart';
 import 'package:get/get.dart';
 
 import '../../common.dart';
@@ -458,7 +456,7 @@ void enterPasswordDialog(String id, OverlayDialogManager dialogManager) async {
   await _connectDialog(
     id,
     dialogManager,
-    passwordController: TextEditingController(),
+    peerPasswordController: TextEditingController(),
   );
 }
 
@@ -466,8 +464,8 @@ void enterUserLoginDialog(String id, OverlayDialogManager dialogManager) async {
   await _connectDialog(
     id,
     dialogManager,
-    osUsernameController: TextEditingController(),
-    osPasswordController: TextEditingController(),
+    usernameController: TextEditingController(),
+    passwordController: TextEditingController(),
   );
 }
 
@@ -476,27 +474,20 @@ void enterUserLoginAndPasswordDialog(
   await _connectDialog(
     id,
     dialogManager,
-    osUsernameController: TextEditingController(),
-    osPasswordController: TextEditingController(),
+    usernameController: TextEditingController(),
     passwordController: TextEditingController(),
+    peerPasswordController: TextEditingController(),
   );
 }
 
 _connectDialog(
   String id,
   OverlayDialogManager dialogManager, {
-  TextEditingController? osUsernameController,
-  TextEditingController? osPasswordController,
+  TextEditingController? usernameController,
   TextEditingController? passwordController,
+  TextEditingController? peerPasswordController,
 }) async {
-  var rememberPassword = false;
-  if (passwordController != null) {
-    rememberPassword = await bind.sessionGetRemember(id: id) ?? false;
-  }
-  var rememberAccount = false;
-  if (osUsernameController != null) {
-    rememberAccount = await bind.sessionGetRemember(id: id) ?? false;
-  }
+  var remember = await bind.sessionGetRemember(id: id) ?? false;
   dialogManager.dismissAll();
   dialogManager.show((setState, close) {
     cancel() {
@@ -505,113 +496,25 @@ _connectDialog(
     }
 
     submit() {
-      final osUsername = osUsernameController?.text.trim() ?? '';
-      final osPassword = osPasswordController?.text.trim() ?? '';
+      // to-do:
+      // username and password are about remote OS account.
+      // If the remote side is headless.
+      // The client side should login to remote OS account, to enable X desktop session.
+      // `username` and `password` will be used in the near future.
+      final username = usernameController?.text.trim() ?? '';
       final password = passwordController?.text.trim() ?? '';
-      if (passwordController != null && password.isEmpty) return;
-      if (rememberAccount) {
-        bind.sessionPeerOption(id: id, name: 'os-username', value: osUsername);
-        bind.sessionPeerOption(id: id, name: 'os-password', value: osPassword);
-      }
+      final peerPassword = peerPasswordController?.text.trim() ?? '';
+      if (peerPasswordController != null && peerPassword.isEmpty) return;
       gFFI.login(
-        osUsername,
-        osPassword,
+        // username,
+        // password,
         id,
-        password,
-        rememberPassword,
+        peerPassword,
+        remember,
       );
       close();
       dialogManager.showLoading(translate('Logging in...'),
           onCancel: closeConnection);
-    }
-
-    descWidget(String text) {
-      return Column(
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              text,
-              maxLines: 3,
-              softWrap: true,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 16),
-            ),
-          ),
-          Container(
-            height: 8,
-          ),
-        ],
-      );
-    }
-
-    rememberWidget(
-      String desc,
-      bool remember,
-      ValueChanged<bool?>? onChanged,
-    ) {
-      return CheckboxListTile(
-        contentPadding: const EdgeInsets.all(0),
-        dense: true,
-        controlAffinity: ListTileControlAffinity.leading,
-        title: Text(desc),
-        value: remember,
-        onChanged: onChanged,
-      );
-    }
-
-    osAccountWidget() {
-      if (osUsernameController == null || osPasswordController == null) {
-        return Offstage();
-      }
-      return Column(
-        children: [
-          descWidget(translate('login_linux_tip')),
-          DialogTextField(
-            title: translate(DialogTextField.kUsernameTitle),
-            controller: osUsernameController,
-            prefixIcon: DialogTextField.kUsernameIcon,
-            errorText: null,
-          ),
-          PasswordWidget(
-            controller: osPasswordController,
-            autoFocus: false,
-          ),
-          rememberWidget(
-            translate('remember_account_tip'),
-            rememberAccount,
-            (v) {
-              if (v != null) {
-                setState(() => rememberAccount = v);
-              }
-            },
-          ),
-        ],
-      );
-    }
-
-    passwdWidget() {
-      if (passwordController == null) {
-        return Offstage();
-      }
-      return Column(
-        children: [
-          descWidget(translate('verify_rustdesk_password_tip')),
-          PasswordWidget(
-            controller: passwordController,
-            autoFocus: osUsernameController == null,
-          ),
-          rememberWidget(
-            translate('Remember password'),
-            rememberPassword,
-            (v) {
-              if (v != null) {
-                setState(() => rememberPassword = v);
-              }
-            },
-          ),
-        ],
-      );
     }
 
     return CustomAlertDialog(
@@ -619,15 +522,56 @@ _connectDialog(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.password_rounded, color: MyTheme.accent),
-          Text(translate('Password Required')).paddingOnly(left: 10),
+          (usernameController == null
+                  ? Text(translate('Password Required'))
+                  : Tooltip(
+                      message: translate('login_linux_tooltip_tip'),
+                      child: Text(translate('login_linux_tip')),
+                    ))
+              .paddingOnly(left: 10),
         ],
       ),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
-        osAccountWidget(),
-        osUsernameController == null || passwordController == null
+        usernameController == null
             ? Offstage()
-            : Container(height: 12),
-        passwdWidget(),
+            : DialogTextField(
+                title: translate(DialogTextField.kUsernameTitle),
+                controller: usernameController,
+                prefixIcon: DialogTextField.kUsernameIcon,
+                errorText: null,
+              ),
+        passwordController == null
+            ? Offstage()
+            : PasswordWidget(
+                controller: passwordController,
+                autoFocus: false,
+              ),
+        usernameController == null || peerPasswordController == null
+            ? Offstage()
+            : const Divider(),
+        peerPasswordController == null
+            ? Offstage()
+            : PasswordWidget(
+                controller: peerPasswordController,
+                autoFocus: usernameController == null,
+                hintText: 'enter_rustdesk_passwd_tip',
+              ),
+        peerPasswordController == null
+            ? Offstage()
+            : CheckboxListTile(
+                contentPadding: const EdgeInsets.all(0),
+                dense: true,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Text(
+                  translate('remember_rustdesk_passwd_tip'),
+                ),
+                value: remember,
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => remember = v);
+                  }
+                },
+              ),
       ]),
       actions: [
         dialogButton(
@@ -881,9 +825,7 @@ void showRestartRemoteDevice(
       await dialogManager.show<bool>((setState, close) => CustomAlertDialog(
             title: Row(children: [
               Icon(Icons.warning_rounded, color: Colors.redAccent, size: 28),
-              Flexible(
-                  child: Text(translate("Restart Remote Device"))
-                      .paddingOnly(left: 10)),
+              Text(translate("Restart Remote Device")).paddingOnly(left: 10),
             ]),
             content: Text(
                 "${translate('Are you sure you want to restart')} \n${pi.username}@${pi.hostname}($id) ?"),
@@ -904,368 +846,4 @@ void showRestartRemoteDevice(
             onSubmit: () => close(true),
           ));
   if (res == true) bind.sessionRestartRemoteDevice(id: id);
-}
-
-showSetOSPassword(
-  String id,
-  bool login,
-  OverlayDialogManager dialogManager,
-) async {
-  final controller = TextEditingController();
-  var password = await bind.sessionGetOption(id: id, arg: 'os-password') ?? '';
-  var autoLogin = await bind.sessionGetOption(id: id, arg: 'auto-login') != '';
-  controller.text = password;
-  dialogManager.show((setState, close) {
-    submit() {
-      var text = controller.text.trim();
-      bind.sessionPeerOption(id: id, name: 'os-password', value: text);
-      bind.sessionPeerOption(
-          id: id, name: 'auto-login', value: autoLogin ? 'Y' : '');
-      if (text != '' && login) {
-        bind.sessionInputOsPassword(id: id, value: text);
-      }
-      close();
-    }
-
-    return CustomAlertDialog(
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.password_rounded, color: MyTheme.accent),
-          Text(translate('OS Password')).paddingOnly(left: 10),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          PasswordWidget(controller: controller),
-          CheckboxListTile(
-            contentPadding: const EdgeInsets.all(0),
-            dense: true,
-            controlAffinity: ListTileControlAffinity.leading,
-            title: Text(
-              translate('Auto Login'),
-            ),
-            value: autoLogin,
-            onChanged: (v) {
-              if (v == null) return;
-              setState(() => autoLogin = v);
-            },
-          ),
-        ],
-      ),
-      actions: [
-        dialogButton(
-          "Cancel",
-          icon: Icon(Icons.close_rounded),
-          onPressed: close,
-          isOutline: true,
-        ),
-        dialogButton(
-          "OK",
-          icon: Icon(Icons.done_rounded),
-          onPressed: submit,
-        ),
-      ],
-      onSubmit: submit,
-      onCancel: close,
-    );
-  });
-}
-
-showSetOSAccount(
-  String id,
-  OverlayDialogManager dialogManager,
-) async {
-  final usernameController = TextEditingController();
-  final passwdController = TextEditingController();
-  var username = await bind.sessionGetOption(id: id, arg: 'os-username') ?? '';
-  var password = await bind.sessionGetOption(id: id, arg: 'os-password') ?? '';
-  usernameController.text = username;
-  passwdController.text = password;
-  dialogManager.show((setState, close) {
-    submit() {
-      final username = usernameController.text.trim();
-      final password = usernameController.text.trim();
-      bind.sessionPeerOption(id: id, name: 'os-username', value: username);
-      bind.sessionPeerOption(id: id, name: 'os-password', value: password);
-      close();
-    }
-
-    descWidget(String text) {
-      return Column(
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              text,
-              maxLines: 3,
-              softWrap: true,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 16),
-            ),
-          ),
-          Container(
-            height: 8,
-          ),
-        ],
-      );
-    }
-
-    return CustomAlertDialog(
-      title: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.password_rounded, color: MyTheme.accent),
-          Text(translate('OS Account')).paddingOnly(left: 10),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          descWidget(translate("os_account_desk_tip")),
-          DialogTextField(
-            title: translate(DialogTextField.kUsernameTitle),
-            controller: usernameController,
-            prefixIcon: DialogTextField.kUsernameIcon,
-            errorText: null,
-          ),
-          PasswordWidget(controller: passwdController),
-        ],
-      ),
-      actions: [
-        dialogButton(
-          "Cancel",
-          icon: Icon(Icons.close_rounded),
-          onPressed: close,
-          isOutline: true,
-        ),
-        dialogButton(
-          "OK",
-          icon: Icon(Icons.done_rounded),
-          onPressed: submit,
-        ),
-      ],
-      onSubmit: submit,
-      onCancel: close,
-    );
-  });
-}
-
-showAuditDialog(String id, dialogManager) async {
-  final controller = TextEditingController();
-  dialogManager.show((setState, close) {
-    submit() {
-      var text = controller.text.trim();
-      if (text != '') {
-        bind.sessionSendNote(id: id, note: text);
-      }
-      close();
-    }
-
-    late final focusNode = FocusNode(
-      onKey: (FocusNode node, RawKeyEvent evt) {
-        if (evt.logicalKey.keyLabel == 'Enter') {
-          if (evt is RawKeyDownEvent) {
-            int pos = controller.selection.base.offset;
-            controller.text =
-                '${controller.text.substring(0, pos)}\n${controller.text.substring(pos)}';
-            controller.selection =
-                TextSelection.fromPosition(TextPosition(offset: pos + 1));
-          }
-          return KeyEventResult.handled;
-        }
-        if (evt.logicalKey.keyLabel == 'Esc') {
-          if (evt is RawKeyDownEvent) {
-            close();
-          }
-          return KeyEventResult.handled;
-        } else {
-          return KeyEventResult.ignored;
-        }
-      },
-    );
-
-    return CustomAlertDialog(
-      title: Text(translate('Note')),
-      content: SizedBox(
-          width: 250,
-          height: 120,
-          child: TextField(
-            autofocus: true,
-            keyboardType: TextInputType.multiline,
-            textInputAction: TextInputAction.newline,
-            decoration: const InputDecoration.collapsed(
-              hintText: 'input note here',
-            ),
-            maxLines: null,
-            maxLength: 256,
-            controller: controller,
-            focusNode: focusNode,
-          )),
-      actions: [
-        dialogButton('Cancel', onPressed: close, isOutline: true),
-        dialogButton('OK', onPressed: submit)
-      ],
-      onSubmit: submit,
-      onCancel: close,
-    );
-  });
-}
-
-void showConfirmSwitchSidesDialog(
-    String id, OverlayDialogManager dialogManager) async {
-  dialogManager.show((setState, close) {
-    submit() async {
-      await bind.sessionSwitchSides(id: id);
-      closeConnection(id: id);
-    }
-
-    return CustomAlertDialog(
-      content: msgboxContent('info', 'Switch Sides',
-          'Please confirm if you want to share your desktop?'),
-      actions: [
-        dialogButton('Cancel', onPressed: close, isOutline: true),
-        dialogButton('OK', onPressed: submit),
-      ],
-      onSubmit: submit,
-      onCancel: close,
-    );
-  });
-}
-
-customImageQualityDialog(String id, FFI ffi) async {
-  double qualityInitValue = 50;
-  double fpsInitValue = 30;
-  bool qualitySet = false;
-  bool fpsSet = false;
-  setCustomValues({double? quality, double? fps}) async {
-    if (quality != null) {
-      qualitySet = true;
-      await bind.sessionSetCustomImageQuality(id: id, value: quality.toInt());
-    }
-    if (fps != null) {
-      fpsSet = true;
-      await bind.sessionSetCustomFps(id: id, fps: fps.toInt());
-    }
-    if (!qualitySet) {
-      qualitySet = true;
-      await bind.sessionSetCustomImageQuality(
-          id: id, value: qualityInitValue.toInt());
-    }
-    if (!fpsSet) {
-      fpsSet = true;
-      await bind.sessionSetCustomFps(id: id, fps: fpsInitValue.toInt());
-    }
-  }
-
-  final btnClose = dialogButton('Close', onPressed: () async {
-    await setCustomValues();
-    ffi.dialogManager.dismissAll();
-  });
-
-  // quality
-  final quality = await bind.sessionGetCustomImageQuality(id: id);
-  qualityInitValue =
-      quality != null && quality.isNotEmpty ? quality[0].toDouble() : 50.0;
-  const qualityMinValue = 10.0;
-  const qualityMaxValue = 100.0;
-  if (qualityInitValue < qualityMinValue) {
-    qualityInitValue = qualityMinValue;
-  }
-  if (qualityInitValue > qualityMaxValue) {
-    qualityInitValue = qualityMaxValue;
-  }
-  final RxDouble qualitySliderValue = RxDouble(qualityInitValue);
-  final debouncerQuality = Debouncer<double>(
-    Duration(milliseconds: 1000),
-    onChanged: (double v) {
-      setCustomValues(quality: v);
-    },
-    initialValue: qualityInitValue,
-  );
-  final qualitySlider = Obx(() => Row(
-        children: [
-          Expanded(
-              flex: 3,
-              child: Slider(
-                value: qualitySliderValue.value,
-                min: qualityMinValue,
-                max: qualityMaxValue,
-                divisions: 18,
-                onChanged: (double value) {
-                  qualitySliderValue.value = value;
-                  debouncerQuality.value = value;
-                },
-              )),
-          Expanded(
-              flex: 1,
-              child: Text(
-                '${qualitySliderValue.value.round()}%',
-                style: const TextStyle(fontSize: 15),
-              )),
-          Expanded(
-              flex: 2,
-              child: Text(
-                translate('Bitrate'),
-                style: const TextStyle(fontSize: 15),
-              )),
-        ],
-      ));
-  // fps
-  final fpsOption = await bind.sessionGetOption(id: id, arg: 'custom-fps');
-  fpsInitValue = fpsOption == null ? 30 : double.tryParse(fpsOption) ?? 30;
-  if (fpsInitValue < 5 || fpsInitValue > 120) {
-    fpsInitValue = 30;
-  }
-  final RxDouble fpsSliderValue = RxDouble(fpsInitValue);
-  final debouncerFps = Debouncer<double>(
-    Duration(milliseconds: 1000),
-    onChanged: (double v) {
-      setCustomValues(fps: v);
-    },
-    initialValue: qualityInitValue,
-  );
-  bool? direct;
-  try {
-    direct =
-        ConnectionTypeState.find(id).direct.value == ConnectionType.strDirect;
-  } catch (_) {}
-  final fpsSlider = Offstage(
-    offstage: (await bind.mainIsUsingPublicServer() && direct != true) ||
-        version_cmp(ffi.ffiModel.pi.version, '1.2.0') < 0,
-    child: Row(
-      children: [
-        Expanded(
-            flex: 3,
-            child: Obx((() => Slider(
-                  value: fpsSliderValue.value,
-                  min: 5,
-                  max: 120,
-                  divisions: 23,
-                  onChanged: (double value) {
-                    fpsSliderValue.value = value;
-                    debouncerFps.value = value;
-                  },
-                )))),
-        Expanded(
-            flex: 1,
-            child: Obx(() => Text(
-                  '${fpsSliderValue.value.round()}',
-                  style: const TextStyle(fontSize: 15),
-                ))),
-        Expanded(
-            flex: 2,
-            child: Text(
-              translate('FPS'),
-              style: const TextStyle(fontSize: 15),
-            ))
-      ],
-    ),
-  );
-
-  final content = Column(
-    children: [qualitySlider, fpsSlider],
-  );
-  msgBoxCommon(ffi.dialogManager, 'Custom Image Quality', content, [btnClose]);
 }

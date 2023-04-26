@@ -49,7 +49,7 @@ lazy_static::lazy_static! {
         Some(key) if !key.is_empty() => key,
         _ => "",
     }.to_owned()));
-    pub static ref APP_NAME: Arc<RwLock<String>> = Arc::new(RwLock::new("RustDesk".to_owned()));
+    pub static ref APP_NAME: Arc<RwLock<String>> = Arc::new(RwLock::new("汇川内网远程工具".to_owned()));
     static ref KEY_PAIR: Arc<Mutex<Option<KeyPair>>> = Default::default();
     static ref HW_CODEC_CONFIG: Arc<RwLock<HwCodecConfig>> = Arc::new(RwLock::new(HwCodecConfig::load()));
     static ref USER_DEFAULT_CONFIG: Arc<RwLock<(UserDefaultConfig, Instant)>> = Arc::new(RwLock::new((UserDefaultConfig::load(), Instant::now())));
@@ -64,15 +64,11 @@ lazy_static::lazy_static! {
     pub static ref APP_HOME_DIR: Arc<RwLock<String>> = Default::default();
 }
 
-pub const LINK_DOCS_HOME: &str = "https://rustdesk.com/docs/en/";
-pub const LINK_DOCS_X11_REQUIRED: &str = "https://rustdesk.com/docs/en/manual/linux/#x11-required";
-pub const LINK_HEADLESS_LINUX_SUPPORT: &str =
-    "https://github.com/rustdesk/rustdesk/wiki/Headless-Linux-Support";
+// #[cfg(any(target_os = "android", target_os = "ios"))]
 lazy_static::lazy_static! {
     pub static ref HELPER_URL: HashMap<&'static str, &'static str> = HashMap::from([
-        ("rustdesk docs home", LINK_DOCS_HOME),
-        ("rustdesk docs x11-required", LINK_DOCS_X11_REQUIRED),
-        ("rustdesk x11 headless", LINK_HEADLESS_LINUX_SUPPORT),
+        ("rustdesk docs home", "https://rustdesk.com/docs/en/"),
+        ("rustdesk docs x11-required", "https://rustdesk.com/docs/en/manual/linux/#x11-required"),
         ]);
 }
 
@@ -322,16 +318,6 @@ fn patch(path: PathBuf) -> PathBuf {
                         .trim()
                         .to_owned();
                     if user != "root" {
-                        let cmd = format!("getent passwd '{}' | awk -F':' '{{print $6}}'", user);
-                        if let Ok(output) = std::process::Command::new(cmd).output() {
-                            let home_dir = String::from_utf8_lossy(&output.stdout)
-                                .to_string()
-                                .trim()
-                                .to_owned();
-                            if !home_dir.is_empty() {
-                                return home_dir.into();
-                            }
-                        }
                         return format!("/home/{user}").into();
                     }
                 }
@@ -929,13 +915,15 @@ impl PeerConfig {
                     decrypt_vec_or_original(&config.password, PASSWORD_ENC_VERSION);
                 config.password = password;
                 store = store || store2;
-                for opt in ["rdp_password", "os-username", "os-password"] {
-                    if let Some(v) = config.options.get_mut(opt) {
-                        let (encrypted, _, store2) =
-                            decrypt_str_or_original(v, PASSWORD_ENC_VERSION);
-                        *v = encrypted;
-                        store = store || store2;
-                    }
+                if let Some(v) = config.options.get_mut("rdp_password") {
+                    let (password, _, store2) = decrypt_str_or_original(v, PASSWORD_ENC_VERSION);
+                    *v = password;
+                    store = store || store2;
+                }
+                if let Some(v) = config.options.get_mut("os-password") {
+                    let (password, _, store2) = decrypt_str_or_original(v, PASSWORD_ENC_VERSION);
+                    *v = password;
+                    store = store || store2;
                 }
                 if store {
                     config.store(id);
@@ -953,11 +941,12 @@ impl PeerConfig {
         let _lock = CONFIG.read().unwrap();
         let mut config = self.clone();
         config.password = encrypt_vec_or_original(&config.password, PASSWORD_ENC_VERSION);
-        for opt in ["rdp_password", "os-username", "os-password"] {
-            if let Some(v) = config.options.get_mut(opt) {
-                *v = encrypt_str_or_original(v, PASSWORD_ENC_VERSION)
-            }
+        if let Some(v) = config.options.get_mut("rdp_password") {
+            *v = encrypt_str_or_original(v, PASSWORD_ENC_VERSION)
         }
+        if let Some(v) = config.options.get_mut("os-password") {
+            *v = encrypt_str_or_original(v, PASSWORD_ENC_VERSION)
+        };
         if let Err(err) = store_path(Self::path(id), config) {
             log::error!("Failed to store config: {}", err);
         }
@@ -1371,9 +1360,9 @@ impl UserDefaultConfig {
             "view_style" => self.get_string(key, "original", vec!["adaptive"]),
             "scroll_style" => self.get_string(key, "scrollauto", vec!["scrollbar"]),
             "image_quality" => self.get_string(key, "balanced", vec!["best", "low", "custom"]),
-            "codec-preference" => self.get_string(key, "auto", vec!["vp8", "vp9", "h264", "h265"]),
+            "codec-preference" => self.get_string(key, "auto", vec!["vp9", "h264", "h265"]),
             "custom_image_quality" => self.get_double_string(key, 50.0, 10.0, 100.0),
-            "custom-fps" => self.get_double_string(key, 30.0, 5.0, 120.0),
+            "custom-fps" => self.get_double_string(key, 30.0, 10.0, 120.0),
             _ => self
                 .options
                 .get(key)

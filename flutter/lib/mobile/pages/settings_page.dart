@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 import 'package:settings_ui/settings_ui.dart';
@@ -46,7 +45,6 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
   var _autoRecordIncomingSession = false;
   var _localIP = "";
   var _directAccessPort = "";
-  var _fingerprint = "";
 
   @override
   void initState() {
@@ -135,12 +133,6 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
       if (directAccessPort != _directAccessPort) {
         update = true;
         _directAccessPort = directAccessPort;
-      }
-
-      final fingerprint = await bind.mainGetFingerprint();
-      if (_fingerprint != fingerprint) {
-        update = true;
-        _fingerprint = fingerprint;
       }
 
       if (update) {
@@ -470,14 +462,6 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
                       )),
                 ),
                 leading: Icon(Icons.info)),
-            SettingsTile.navigation(
-                onPressed: (context) => onCopyFingerprint(_fingerprint),
-                title: Text(translate("Fingerprint")),
-                value: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Text(_fingerprint),
-                ),
-                leading: Icon(Icons.fingerprint)),
           ],
         ),
       ],
@@ -520,13 +504,13 @@ void showLanguageSettings(OverlayDialogManager dialogManager) async {
       return CustomAlertDialog(
         content: Column(
           children: [
-                getRadio(Text(translate('Default')), '', lang, setLang),
+                getRadio('Default', '', lang, setLang),
                 Divider(color: MyTheme.border),
               ] +
               langs.map((e) {
                 final key = e[0] as String;
                 final name = e[1] as String;
-                return getRadio(Text(translate(name)), key, lang, setLang);
+                return getRadio(name, key, lang, setLang);
               }).toList(),
         ),
       );
@@ -552,11 +536,9 @@ void showThemeSettings(OverlayDialogManager dialogManager) async {
 
     return CustomAlertDialog(
       content: Column(children: [
-        getRadio(
-            Text(translate('Light')), ThemeMode.light, themeMode, setTheme),
-        getRadio(Text(translate('Dark')), ThemeMode.dark, themeMode, setTheme),
-        getRadio(Text(translate('Follow System')), ThemeMode.system, themeMode,
-            setTheme)
+        getRadio('Light', ThemeMode.light, themeMode, setTheme),
+        getRadio('Dark', ThemeMode.dark, themeMode, setTheme),
+        getRadio('Follow System', ThemeMode.system, themeMode, setTheme)
       ]),
     );
   }, backDismiss: true, clickMaskDismiss: true);

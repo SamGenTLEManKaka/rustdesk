@@ -124,7 +124,6 @@ void runMainApp(bool startService) async {
   if (startService) {
     // await windowManager.ensureInitialized();
     gFFI.serverModel.startService();
-    bind.pluginSyncUi(syncTo: kAppTypeMain);
   }
   gFFI.userModel.refreshCurrentUser();
   runApp(App());
@@ -135,7 +134,8 @@ void runMainApp(bool startService) async {
     await restoreWindowPosition(WindowType.Main);
     // Check the startup argument, if we successfully handle the argument, we keep the main window hidden.
     final handledByUniLinks = await initUniLinks();
-    debugPrint("handled by uni links: $handledByUniLinks");
+    debugPrint(
+        "handled by uni links: $handledByUniLinks");
     if (handledByUniLinks || checkArguments()) {
       windowManager.hide();
     } else {
@@ -249,7 +249,6 @@ void hideCmWindow() {
   windowManager.setOpacity(0);
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     bind.mainHideDocker();
-    await windowManager.minimize();
     await windowManager.hide();
   });
 }

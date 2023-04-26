@@ -384,7 +384,6 @@ class MainService : Service() {
         return true
     }
 
-    @Synchronized
     fun stopCapture() {
         Log.d(logTag, "Stop Capture")
         setFrameRawEnable("video",false)
